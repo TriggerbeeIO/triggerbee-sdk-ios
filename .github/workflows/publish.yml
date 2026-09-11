@@ -41,9 +41,13 @@ jobs:
         run: |
           set -euo pipefail
           TAG_VERSION="${GITHUB_REF_NAME#v}"
-          awk -v ver="$TAG_VERSION" '
-            $0 ~ "^## \[" ver "\]" { found = 1; next }
-            found && /^## \[/ { exit }
+          # Matched with index() rather than a regex: an escaped bracket inside an awk
+          # string decays to a bare one, turning the version brackets into a character
+          # class that never matches the header. index() compares literally and behaves
+          # the same across awk variants.
+          awk -v hdr="## [$TAG_VERSION]" '
+            index($0, hdr) == 1 { found = 1; next }
+            found && index($0, "## [") == 1 { exit }
             found { print }
           ' CHANGELOG.md > RELEASE_NOTES.md
           if [ ! -s RELEASE_NOTES.md ]; then
