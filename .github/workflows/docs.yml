@@ -62,11 +62,18 @@ jobs:
             '<a href="documentation/triggerbee/">Triggerbee iOS SDK documentation</a>' \
             > _site/index.html
 
+      - name: Package site
+        # DocC names symbol files after Swift signatures, so they contain colons
+        # (init(name:revenue:).json). actions/upload-artifact rejects colons outright for
+        # cross-filesystem safety, so hand the deploy job a single tarball instead of loose
+        # files. Colons inside a tar member name are fine.
+        run: tar -czf docc-site.tar.gz -C _site .
+
       - name: Upload generated site
         uses: actions/upload-artifact@v4
         with:
           name: docc-site
-          path: _site
+          path: docc-site.tar.gz
           retention-days: 1
 
   deploy:
@@ -80,7 +87,11 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: docc-site
-          path: _site
+
+      - name: Unpack site
+        run: |
+          mkdir -p _site
+          tar -xzf docc-site.tar.gz -C _site
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
