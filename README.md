@@ -24,12 +24,14 @@ full example; this is the bird's-eye list.
       `https://github.com/TriggerbeeIO/triggerbee-sdk-ios.git` → choose your target
 
 **Initialize once** *(in your `App` init or `AppDelegate.application(_:didFinishLaunchingWithOptions:)`)*
-- [ ] ```swift
-  import Triggerbee
+- [ ] Configure the singleton, then start the session:
 
-  Triggerbee.shared.configure(TriggerbeeConfig(siteId: YOUR_SITE_ID))
-  Task { await Triggerbee.shared.start() }   // safe to call every launch — only mints the UID first time
-  ```
+```swift
+import Triggerbee
+
+Triggerbee.shared.configure(TriggerbeeConfig(siteId: YOUR_SITE_ID))
+Task { await Triggerbee.shared.start() }   // safe to call every launch — only mints the UID first time
+```
 
 **Track screens**
 - [ ] On each screen view:
