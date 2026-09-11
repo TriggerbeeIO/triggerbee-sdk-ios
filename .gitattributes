@@ -1,0 +1,12 @@
+# Text files are LF in the repo and in the working copy, so line endings don't depend on
+# each developer's core.autocrlf setting. Windows-only scripts keep CRLF because cmd.exe
+# needs it.
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+*.png binary
+*.jpg binary
+*.ico binary

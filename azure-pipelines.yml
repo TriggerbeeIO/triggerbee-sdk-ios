@@ -1,0 +1,36 @@
+name: mirror-main-to-github
+
+# Mirrors main to the public GitHub repo after a PR merges here. GitHub is the published
+# face of this repo (Pages API reference, Swift Package Manager consumers resolve the tag
+# straight from it); Azure DevOps is where the work happens.
+trigger:
+  branches:
+    include: [ main ]
+  # Tags are deliberately not mirrored: pushing a v* tag to GitHub is what triggers
+  # publish.yml to cut a release, so that stays a manual, explicit act.
+  tags:
+    exclude: [ '*' ]
+
+pr: none
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - checkout: self
+    # Azure's default shallow clone cannot be pushed to another remote.
+    fetchDepth: 0
+    persistCredentials: false
+
+  - script: |
+      set -euo pipefail
+      if [ -z "${GITHUB_PAT:-}" ]; then
+        echo "##vso[task.logissue type=error]GITHUB_PAT secret variable is not set on this pipeline."
+        exit 1
+      fi
+      # No --force: a rejected non-fast-forward means GitHub holds commits Azure does not,
+      # which needs a human rather than an overwrite.
+      git push "https://x-access-token:${GITHUB_PAT}@github.com/TriggerbeeIO/triggerbee-sdk-ios.git" HEAD:refs/heads/main
+    displayName: Push main to GitHub
+    env:
+      GITHUB_PAT: $(GITHUB_PAT)

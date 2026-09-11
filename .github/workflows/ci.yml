@@ -1,0 +1,77 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # macOS, not ubuntu: the package is iOS-only, so it needs Xcode and a Simulator runtime.
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Validate package manifest
+        # Manifest parsing runs on the host, so this is a cheap check that consumers can
+        # resolve the package even though the library itself can't build for macOS.
+        run: swift package dump-package > /dev/null
+
+      - name: Resolve an iPhone simulator
+        # Simulator device names change with every Xcode release, so hardcoding one ("iPhone 17")
+        # turns a runner-image bump into a red build. Pick the newest installed iOS runtime and
+        # the newest iPhone on it instead, and pass the UDID, which is unambiguous.
+        id: sim
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available --json | jq -r '
+            .devices
+            | to_entries
+            | map(select(.key | test("SimRuntime.iOS-")))
+            | sort_by(.key)
+            | last
+            | .value
+            | map(select(.name | startswith("iPhone")))
+            | last
+            | .udid
+          ')
+          if [ -z "$UDID" ] || [ "$UDID" = "null" ]; then
+            echo "::error::No available iPhone simulator found on this runner." >&2
+            xcrun simctl list devices available
+            exit 1
+          fi
+          xcrun simctl list devices available | grep -F "$UDID"
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -scheme Triggerbee \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -resultBundlePath TestResults.xcresult
+
+      - name: Build Release
+        # Debug tests passing doesn't prove a Release build does: optimisation and dead-code
+        # stripping surface different errors, and Release is what consumers actually compile.
+        run: |
+          xcodebuild build \
+            -scheme Triggerbee \
+            -configuration Release \
+            -destination "id=${{ steps.sim.outputs.udid }}"
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: triggerbee-test-results
+          path: TestResults.xcresult

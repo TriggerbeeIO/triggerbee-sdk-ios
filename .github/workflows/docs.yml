@@ -1,0 +1,74 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+  # Manual trigger from the Actions tab — useful for re-deploying docs after a settings tweak.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Avoid concurrent deploys racing each other; only the last push to main matters.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build DocC archive
+        # `generic/platform=iOS` builds documentation without needing a booted simulator.
+        run: |
+          xcodebuild docbuild \
+            -scheme Triggerbee \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath .derivedData
+
+      - name: Transform for static hosting
+        # Pages serves this repo at https://triggerbeeio.github.io/triggerbee-sdk-ios/, so DocC
+        # has to bake that prefix into every asset URL — without it the site loads a blank page
+        # because the JS bundle 404s. The base path must stay in sync with the repo name.
+        run: |
+          set -euo pipefail
+          ARCHIVE=$(find .derivedData -type d -name 'Triggerbee.doccarchive' | head -1)
+          if [ -z "$ARCHIVE" ]; then
+            echo "::error::docbuild produced no Triggerbee.doccarchive." >&2
+            exit 1
+          fi
+          xcrun docc process-archive transform-for-static-hosting "$ARCHIVE" \
+            --output-path _site \
+            --hosting-base-path triggerbee-sdk-ios
+
+      - name: Add root redirect
+        # DocC's static output has no page at the site root; without this, the Pages URL in the
+        # README lands on a 404 and only the deep /documentation/triggerbee/ link works.
+        run: |
+          printf '%s\n' \
+            '<!doctype html>' \
+            '<meta charset="utf-8">' \
+            '<title>Triggerbee iOS SDK</title>' \
+            '<meta http-equiv="refresh" content="0; url=documentation/triggerbee/">' \
+            '<a href="documentation/triggerbee/">Triggerbee iOS SDK documentation</a>' \
+            > _site/index.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

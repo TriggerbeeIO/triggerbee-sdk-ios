@@ -1,0 +1,106 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Swift Package Manager has no central registry: the git tag *is* the release, and
+    # `.package(url:from:)` resolves straight from this repo. So "publishing" means making the
+    # tag trustworthy — verifying it agrees with the source and the changelog, proving the
+    # tagged commit builds and passes tests, and then publishing release notes.
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches SDKVersion
+        # The tagged version is baked into every request the SDK makes (DeviceInfo.sdkVersion).
+        # If the tag and the constant disagree, the backend attributes traffic to the wrong
+        # release and consumers can't reproduce a build from source. Bump SDKVersion.swift in
+        # the same commit as the CHANGELOG entry, before tagging.
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          SDK_VERSION=$(grep -E 'static let current' Sources/Triggerbee/Internal/SDKVersion.swift | sed -E 's/.*"(.*)".*/\1/')
+          echo "Tag:        $TAG_VERSION"
+          echo "SDKVersion: $SDK_VERSION"
+          if [ "$TAG_VERSION" != "$SDK_VERSION" ]; then
+            echo "::error::Tag '$TAG_VERSION' does not match SDKVersion.current '$SDK_VERSION'. Bump Sources/Triggerbee/Internal/SDKVersion.swift before tagging." >&2
+            exit 1
+          fi
+
+      - name: Extract release notes from CHANGELOG
+        # A tag with no changelog section means the release is undocumented; fail rather than
+        # publish empty notes that nobody will backfill.
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          awk -v ver="$TAG_VERSION" '
+            $0 ~ "^## \[" ver "\]" { found = 1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          if [ ! -s RELEASE_NOTES.md ]; then
+            echo "::error::No '## [$TAG_VERSION]' section found in CHANGELOG.md." >&2
+            exit 1
+          fi
+          cat RELEASE_NOTES.md
+
+      - name: Validate package manifest
+        run: swift package dump-package > /dev/null
+
+      - name: Resolve an iPhone simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available --json | jq -r '
+            .devices
+            | to_entries
+            | map(select(.key | test("SimRuntime.iOS-")))
+            | sort_by(.key)
+            | last
+            | .value
+            | map(select(.name | startswith("iPhone")))
+            | last
+            | .udid
+          ')
+          if [ -z "$UDID" ] || [ "$UDID" = "null" ]; then
+            echo "::error::No available iPhone simulator found on this runner." >&2
+            exit 1
+          fi
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Unit tests
+        run: |
+          xcodebuild test \
+            -scheme Triggerbee \
+            -destination "id=${{ steps.sim.outputs.udid }}"
+
+      - name: Build Release
+        run: |
+          xcodebuild build \
+            -scheme Triggerbee \
+            -configuration Release \
+            -destination "id=${{ steps.sim.outputs.udid }}"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          # Anything below 1.0 is pre-release in SemVer terms, and the README says so too.
+          PRERELEASE=""
+          case "$TAG_VERSION" in
+            0.*) PRERELEASE="--prerelease" ;;
+          esac
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes-file RELEASE_NOTES.md \
+            $PRERELEASE
