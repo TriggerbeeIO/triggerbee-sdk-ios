@@ -18,6 +18,10 @@ concurrency:
 
 jobs:
   build:
+    # macOS only because DocC needs Xcode. The generated site is handed to the deploy job as a
+    # plain artifact rather than a Pages artifact: actions/upload-pages-artifact shells out to
+    # GNU tar with --hard-dereference, which the BSD tar on macOS runners does not support, so
+    # calling it here fails after the whole build has already run.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,10 +61,12 @@ jobs:
             '<a href="documentation/triggerbee/">Triggerbee iOS SDK documentation</a>' \
             > _site/index.html
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Upload generated site
+        uses: actions/upload-artifact@v4
         with:
+          name: docc-site
           path: _site
+          retention-days: 1
 
   deploy:
     needs: build
@@ -69,6 +75,17 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Download generated site
+        uses: actions/download-artifact@v4
+        with:
+          name: docc-site
+          path: _site
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
