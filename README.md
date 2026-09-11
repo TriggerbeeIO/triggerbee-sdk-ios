@@ -14,9 +14,11 @@ DocC comments on every `main` push.
 A copy-paste checklist for getting Triggerbee live in your app. The next section has the
 full example; this is the bird's-eye list.
 
-**Prereqs from Triggerbee**
+**Before you start**
 - [ ] Get your `siteId` (numeric) from your Triggerbee account manager
-- [ ] Ask us to allow-list your app's bundle identifier (e.g. `com.acme.shop`) on your account
+- [ ] Add your app's bundle identifier (e.g. `com.acme.shop`) to your account under
+      **Account Settings → General → "Also accept traffic from the following native apps"**,
+      one per line
 
 **Add the SDK**
 - [ ] iOS 15 minimum, Xcode 15+
