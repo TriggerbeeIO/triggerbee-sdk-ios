@@ -27,11 +27,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build DocC archive
-        # `generic/platform=iOS` builds documentation without needing a booted simulator.
+        # A Simulator destination needs no booted device and no code signing; the bare
+        # `generic/platform=iOS` is a physical-device destination and drags signing in.
         run: |
           xcodebuild docbuild \
             -scheme Triggerbee \
-            -destination 'generic/platform=iOS' \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath .derivedData
 
       - name: Transform for static hosting
