@@ -16,9 +16,8 @@ full example; this is the bird's-eye list.
 
 **Before you start**
 - [ ] Get your `siteId` (numeric) from your Triggerbee account manager
-- [ ] Add your app's bundle identifier (e.g. `com.acme.shop`) to your account under
-      **Account Settings → General → "Also accept traffic from the following native apps"**,
-      one per line
+- [ ] Have your app's bundle identifier (e.g. `com.acme.shop`) allow-listed in your
+      Triggerbee account settings — your account manager can do this if you do not have access
 
 **Add the SDK**
 - [ ] iOS 15 minimum, Xcode 15+
