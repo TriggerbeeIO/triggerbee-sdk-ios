@@ -12,7 +12,12 @@ actor InMemorySessionStore: SessionStore {
     func getUid() async -> Int64? { return uid }
     func setUid(_ uid: Int64) async { self.uid = uid }
 
-    func getIdentifier() async -> String? { return identifier }
+    // Mirrors UserDefaultsSessionStore, which reads an empty identifier back as nil. A double
+    // that returned "" instead would hide exactly the divergence these tests exist to catch.
+    func getIdentifier() async -> String? {
+        guard let identifier, !identifier.isEmpty else { return nil }
+        return identifier
+    }
     func setIdentifier(_ identifier: String) async { self.identifier = identifier }
 
     func getClosedWidgets() async -> [ClosedWidgetEntry] { return closedWidgets }

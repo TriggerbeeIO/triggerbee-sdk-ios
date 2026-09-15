@@ -37,6 +37,10 @@ public final class Triggerbee: @unchecked Sendable {
     // web). Scoped to the `open` event only; close/clickthrough/etc. always log.
     private var openLoggedWidgetIds: Set<Int> = []
 
+    // Serialises the fire-and-forget closeWidget writes so they land in call order, and gives
+    // pageload/recheck something to wait on. Guarded by `lock`.
+    private var closeBarrier: Task<Void, Never>?
+
     /// Configure the SDK. Call once, typically in your app's `init` or
     /// `application(_:didFinishLaunchingWithOptions:)`. Calling a second time replaces the
     /// configuration (useful for tests; avoid in production code).
@@ -221,6 +225,7 @@ public final class Triggerbee: @unchecked Sendable {
     public func pageload(page: String, title: String, secondsOnPage: Int = 0) async throws -> [WidgetCheckResponse] {
         if isDisabled { return [] }
         let client = try require()
+        await awaitPendingCloses()
         let results = try await client.pageload(page: page, title: title, secondsOnPage: secondsOnPage)
         await mirrorSessionContext(from: client)
         // Prime the WebView cache while the caller is still on Main, before it can mount
@@ -234,6 +239,7 @@ public final class Triggerbee: @unchecked Sendable {
     public func recheck(page: String, secondsOnPage: Int) async throws -> [WidgetCheckResponse] {
         if isDisabled { return [] }
         let client = try require()
+        await awaitPendingCloses()
         let results = try await client.recheck(page: page, secondsOnPage: secondsOnPage)
         await mirrorSessionContext(from: client)
         if results.contains(where: { $0.result }) { await prefetchScripts() }
@@ -245,10 +251,18 @@ public final class Triggerbee: @unchecked Sendable {
     public func closeWidget(widgetId: Int, reason: CloseReason? = nil) {
         if isDisabled { return }
         guard let client = currentClient() else { return }
-        // Fire-and-forget so the public API stays sync — mirrors Android's closeWidget contract.
-        Task {
-            await client.closeWidget(widgetId: widgetId, reason: reason)
-            await self.mirrorSessionContext(from: client)
+        // Sync by design — mirrors Android's closeWidget contract — so the persist runs off a
+        // Task. SdkClient is an actor, and actors promise no ordering between separately
+        // enqueued calls, so a pageload issued straight after a close could otherwise build its
+        // request before the entry landed and silently drop the repetition rule. Chaining each
+        // close onto the previous one gives pageload/recheck a single thing to await.
+        lock.withLock {
+            let previous = closeBarrier
+            closeBarrier = Task { [weak self] in
+                await previous?.value
+                await client.closeWidget(widgetId: widgetId, reason: reason)
+                await self?.mirrorSessionContext(from: client)
+            }
         }
     }
 
@@ -392,6 +406,13 @@ public final class Triggerbee: @unchecked Sendable {
 
     func markOpenLogged(_ id: Int) {
         lock.withLock { _ = openLoggedWidgetIds.insert(id) }
+    }
+
+    /// Wait for any in-flight closeWidget writes to reach the store, so a
+    /// request built straight after a close carries the entry the visitor just produced.
+    private func awaitPendingCloses() async {
+        let barrier = lock.withLock { closeBarrier }
+        await barrier?.value
     }
 
     private var cachedSessionContext: SessionContext?

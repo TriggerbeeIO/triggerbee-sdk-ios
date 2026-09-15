@@ -5,6 +5,31 @@ All notable changes to the Triggerbee iOS SDK are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-15
+
+Bug fixes. No API changes.
+
+### Fixed
+
+- **A widget close could be lost when a pageload followed it immediately.**
+  `closeWidget(widgetId:reason:)` is synchronous, so its persist runs off an unstructured
+  `Task`. `SdkClient` is an actor and actors make no ordering promise between separately
+  enqueued calls, so a `pageload` issued on the same turn could build its request before the
+  entry landed. The backend never saw the close, the repetition rule was never applied, and the
+  widget the visitor had just dismissed came back. Closes are now chained and awaited by
+  `pageload(page:title:secondsOnPage:)` and `recheck(page:secondsOnPage:)`; consecutive
+  closes also keep their call order.
+- **`applicationId` was not fully escaped when built into a URL.**
+  `CharacterSet.urlQueryAllowed` permits the sub-delimiters, `&` and `=` among them, so an
+  identifier containing them could open further query parameters. Only reachable through the
+  explicit `TriggerbeeConfig(applicationId:)` override — a bundle identifier cannot contain
+  these characters — so this is robustness rather than an exposure. Android already encoded
+  correctly.
+- **`identify("")` left in-memory and persisted state disagreeing.**
+  The store reads an empty identifier back as `nil` while the session context kept `""`, so
+  `sessionContext.identifier` changed across a relaunch without any call being made. Both now
+  resolve to `nil`.
+
 ## [0.1.0] - 2026-08-21
 
 First public release. Native iOS SDK for the Triggerbee platform.

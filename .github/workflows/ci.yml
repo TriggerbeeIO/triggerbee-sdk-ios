@@ -1,8 +1,10 @@
 name: ci
 
 on:
+  # Every branch, not just main: without a PR gate on this repo, a working branch is the only
+  # place a change can be proven before it reaches the published mirror.
   push:
-    branches: [main]
+    branches: ['**']
   pull_request:
 
 concurrency:

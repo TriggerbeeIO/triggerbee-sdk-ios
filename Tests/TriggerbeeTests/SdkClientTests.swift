@@ -165,4 +165,70 @@ final class SdkClientTests: XCTestCase {
         let ctx = await client.sessionContext
         XCTAssertEqual(ctx.identifier, "user@example.com")
     }
+
+    // MARK: - Query encoding
+
+    func testApplicationIdWithQueryDelimitersIsPercentEncoded() async {
+        // Arrange — CharacterSet.urlQueryAllowed permits & and =, so encoding with it would
+        // leave this value able to open new query parameters. Only reachable through the
+        // explicit TriggerbeeConfig(applicationId:) override; a bundle id cannot contain these.
+        let config = TriggerbeeConfig(siteId: 12345, baseUrl: mockServer.baseUrl)
+        let injected = SdkClient(
+            config: config,
+            applicationId: "com.acme&siteId=999",
+            sessionStore: InMemorySessionStore(),
+            deviceInfo: DeviceInfoCollector.collect(),
+            urlSession: mockServer.urlSession
+        )
+
+        // Act
+        let url = injected.widgetUrl(widgetId: 5, uid: 7)
+
+        // Assert — the delimiters are escaped, so siteId still appears exactly once.
+        XCTAssertTrue(url.contains("applicationId=com.acme%26siteId%3D999"), url)
+        XCTAssertEqual(url.components(separatedBy: "siteId=").count - 1, 1, url)
+    }
+
+    func testOrdinaryBundleIdentifierIsLeftIntactInWidgetUrl() {
+        // Arrange — the encoding must not mangle a normal bundle id.
+
+        // Act
+        let url = client.widgetUrl(widgetId: 5, uid: 7)
+
+        // Assert
+        XCTAssertTrue(url.contains("applicationId=com.example.test"), url)
+    }
+
+    // MARK: - Identifier normalisation
+
+    func testEmptyIdentifierLeavesMemoryAndStoreAgreeing() async throws {
+        // Arrange — the store reads "" back as nil, so mirroring the raw value into the
+        // in-memory context would make the two disagree after a relaunch.
+        _ = await client.start(generate: { 7 })
+        mockServer.enqueue(status: 200, body: "{}")
+
+        // Act
+        try await client.identify(identifier: "", properties: [:])
+
+        // Assert
+        let context = await client.sessionContext
+        XCTAssertNil(context.identifier)
+        let persisted = await sessionStore.getIdentifier()
+        XCTAssertNil(persisted)
+    }
+
+    func testNonEmptyIdentifierIsMirroredIntoSessionContext() async throws {
+        // Arrange
+        _ = await client.start(generate: { 7 })
+        mockServer.enqueue(status: 200, body: "{}")
+
+        // Act
+        try await client.identify(identifier: "user@acme.com", properties: [:])
+
+        // Assert
+        let context = await client.sessionContext
+        XCTAssertEqual(context.identifier, "user@acme.com")
+        let persisted = await sessionStore.getIdentifier()
+        XCTAssertEqual(persisted, "user@acme.com")
+    }
 }

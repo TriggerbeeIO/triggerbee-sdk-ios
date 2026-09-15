@@ -170,6 +170,13 @@ actor SdkClient {
 
     // MARK: - Identify / goals / purchases / pageview / batch
 
+    // The store reads an empty identifier back as nil, so mirroring the raw value into the
+    // in-memory context would make the two disagree after a relaunch. Resolve it to what a
+    // later read will actually return.
+    private static func storedIdentifier(_ identifier: String) -> String? {
+        return identifier.isEmpty ? nil : identifier
+    }
+
     func identify(identifier: String, properties: [String: String]) async throws {
         await ensureLoaded()
         let uid = sessionStateValue.uid
@@ -189,7 +196,7 @@ actor SdkClient {
             throw error
         }
         await sessionStore.setIdentifier(identifier)
-        updateSessionState(sessionStateValue.with(identifier: identifier))
+        updateSessionState(sessionStateValue.with(identifier: SdkClient.storedIdentifier(identifier)))
         config.logger.debug("identify ✓")
     }
 
@@ -304,19 +311,29 @@ actor SdkClient {
         // Mirror what /identify would do locally so sessionContext stays consistent.
         if let identify {
             await sessionStore.setIdentifier(identify.identifier)
-            updateSessionState(sessionStateValue.with(identifier: identify.identifier))
+            updateSessionState(sessionStateValue.with(identifier: SdkClient.storedIdentifier(identify.identifier)))
         }
         config.logger.debug("batch ✓")
     }
 
     // MARK: - Widget URL
 
+    // .urlQueryAllowed permits the sub-delimiters, & and = among them, so encoding a value with
+    // it leaves the value able to open new query parameters. Only reachable through an explicit
+    // TriggerbeeConfig(applicationId:) — a bundle identifier cannot contain these — but the
+    // encoding should be correct for whatever it is handed. Android already encodes properly.
+    private static let queryValueAllowed: CharacterSet = {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=+?#;,/:$")
+        return allowed
+    }()
+
     nonisolated func widgetUrl(widgetId: Int, uid: Int64) -> String {
         // Non-throwing by design — the result feeds straight into a WebView load — so the
         // uid == 0 case is handled by Triggerbee.widgetUrl(widgetId:) before we get here: it
         // logs and returns "" rather than trapping the host process. URLs are percent-encoded
         // inline because we don't want to depend on URLComponents allocating per call.
-        let encodedAppId = applicationId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? applicationId
+        let encodedAppId = applicationId.addingPercentEncoding(withAllowedCharacters: SdkClient.queryValueAllowed) ?? applicationId
         let url = "\(config.baseUrl)/v2/client/widgets/\(widgetId)/html" +
             "?siteId=\(config.siteId)&uid=\(uid)&applicationId=\(encodedAppId)" +
             "&targetDevice=NativeApp"
@@ -332,13 +349,13 @@ actor SdkClient {
     // Same per-site content across visitors — safe for the SDK to prefetch into the WKWebView's
     // shared HTTP cache. The widget HTML itself is per-visitor (uid varies) so we don't prefetch it.
     nonisolated func trackingScriptUrl() -> String {
-        let encodedAppId = applicationId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? applicationId
+        let encodedAppId = applicationId.addingPercentEncoding(withAllowedCharacters: SdkClient.queryValueAllowed) ?? applicationId
         return "\(config.baseUrl)/v2/client/scripts/core?siteId=\(config.siteId)" +
             "&targetDevice=NativeApp&applicationId=\(encodedAppId)"
     }
 
     nonisolated func siteScriptUrl() -> String {
-        let encodedAppId = applicationId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? applicationId
+        let encodedAppId = applicationId.addingPercentEncoding(withAllowedCharacters: SdkClient.queryValueAllowed) ?? applicationId
         return "\(config.baseUrl)/v2/client/scripts/site?siteId=\(config.siteId)" +
             "&targetDevice=NativeApp&applicationId=\(encodedAppId)"
     }
