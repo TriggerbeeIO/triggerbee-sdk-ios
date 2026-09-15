@@ -56,8 +56,10 @@ jobs:
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
       - name: Run unit tests
+        # -quiet drops per-file build chatter, which otherwise buries assertion failures
+        # thousands of lines deep. Errors and test failures still print.
         run: |
-          xcodebuild test \
+          xcodebuild test -quiet \
             -scheme Triggerbee \
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -resultBundlePath TestResults.xcresult
@@ -66,7 +68,7 @@ jobs:
         # Debug tests passing doesn't prove a Release build does: optimisation and dead-code
         # stripping surface different errors, and Release is what consumers actually compile.
         run: |
-          xcodebuild build \
+          xcodebuild build -quiet \
             -scheme Triggerbee \
             -configuration Release \
             -destination "id=${{ steps.sim.outputs.udid }}"
