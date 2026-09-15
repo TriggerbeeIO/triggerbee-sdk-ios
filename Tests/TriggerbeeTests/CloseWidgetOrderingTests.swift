@@ -83,7 +83,7 @@ final class CloseWidgetOrderingTests: XCTestCase {
         // Act — closes are chained, so they must also not race each other.
         Triggerbee.shared.closeWidget(widgetId: 1, reason: .dismissal)
         Triggerbee.shared.closeWidget(widgetId: 2, reason: .dismissal)
-        Triggerbee.shared.closeWidget(widgetId: 3, reason: .clickthrough)
+        Triggerbee.shared.closeWidget(widgetId: 3, reason: .clickThrough)
         _ = try await Triggerbee.shared.pageload(page: "/next", title: "Next")
 
         // Assert
