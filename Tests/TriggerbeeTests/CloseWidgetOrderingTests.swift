@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 @testable import Triggerbee
 
 /// `closeWidget(widgetId:reason:)` is synchronous by design, so its persist runs off an
@@ -34,8 +35,12 @@ final class CloseWidgetOrderingTests: XCTestCase {
 
     /// Widget ids in the `closedWidgets` array of the most recent request body, in wire order.
     private func closedWidgetIdsInLastRequest() throws -> [Int] {
-        let body = try XCTUnwrap(server.lastRequest()?.httpBody)
-        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        // lastRequest() is already optional, so reaching through it with ?. yields Data?? — one
+        // XCTUnwrap peels a single level and leaves an optional JSONSerialization won't take.
+        let request = try XCTUnwrap(server.lastRequest())
+        let body = try XCTUnwrap(request.httpBody)
+        let object = try JSONSerialization.jsonObject(with: body)
+        let json = try XCTUnwrap(object as? [String: Any])
         let closed = try XCTUnwrap(json["closedWidgets"] as? [[String: Any]])
         return closed.compactMap { $0["widgetId"] as? Int }
     }
